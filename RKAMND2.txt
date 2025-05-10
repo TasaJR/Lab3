@@ -1,0 +1,163 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. RTAMND.
+
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+
+       COPY DFHAID.
+       COPY DFHBMSCA.
+       COPY RKMAP.
+       COPY RTCOMM.
+       COPY RTPROGS.
+       COPY PROMOCDE.
+
+       01 WS-RESP               PIC S9(8) COMP.
+       01 WS-USERID             PIC X(8).
+       01 WS-ABSTIME            PIC S9(15) COMP-3.
+       01 WS-JULIAN-DATE        PIC 9(7).
+       01 WS-POSTAGE-NUM        PIC 9(5).
+
+       LINKAGE SECTION.
+       01 DFHCOMMAREA           PIC X(100).
+
+       PROCEDURE DIVISION USING DFHCOMMAREA.
+
+       AA000_MAINLINE SECTION.
+
+           IF EIBCALEN = 0
+               MOVE 'NO COMMAREA' TO RKMSGO
+               PERFORM CC000_DISPLAY_SCREEN
+               GOBACK
+           END-IF
+
+           MOVE DFHCOMMAREA TO PROMO-CODE-COMMAREA
+           MOVE PROMO-CODE-IN-COMMAREA TO RKPCDI
+
+           EXEC CICS READ FILE('PROMOCDE')
+               INTO(PROMOTION-CODE-RECORD)
+               RIDFLD(PROMO-CODE-IN-COMMAREA)
+               RESP(WS-RESP)
+           END-EXEC
+
+           IF WS-RESP NOT = DFHRESP(NORMAL)
+               MOVE 'PROMO NOT FOUND' TO RKMSGO
+               PERFORM BB000_CLEAR_FIELDS
+               PERFORM CC000_DISPLAY_SCREEN
+               GOBACK
+           END-IF
+
+           *> Map DB fields to screen fields
+           MOVE PROMO-CODE           TO RKPCDI
+           MOVE PROMO-SHORT-DESC     TO RKSHDSCI
+           MOVE PROMO-DESC(1:50)     TO RKFDESCI
+           MOVE PROMO-VALID-FROM     TO RKVFROMI
+           MOVE PROMO-VALID-TO       TO RKVTOI
+           MOVE PROMO-NEW-CUST       TO RKNEWCI
+           MOVE PROMO-MAX-USES       TO RKMAXUI
+           MOVE PROMO-MAX-DISC       TO RKMAXDI
+
+           COMPUTE WS-POSTAGE-NUM = PROMO-POSTAGE-COST
+           MOVE WS-POSTAGE-NUM TO RKPOSTGI
+
+           PERFORM CC000_DISPLAY_SCREEN
+
+           EXEC CICS RECEIVE
+               MAP('RKDTL')
+               MAPSET('RKMAP')
+               INTO(RKDTLI)
+               RESP(WS-RESP)
+           END-EXEC
+
+           EVALUATE EIBAID
+               WHEN DFHPF3
+                   EXEC CICS XCTL
+                       PROGRAM('RKMENU')
+                       COMMAREA(PROMO-CODE-COMMAREA)
+                   END-EXEC
+
+               WHEN DFHPF2
+                   PERFORM BB000_PROCESS_INPUT
+                   IF WS-RESP = DFHRESP(NORMAL)
+                       MOVE 'PROMO UPDATED OK' TO RKMSGO
+                   ELSE
+                       MOVE 'UPDATE FAILED' TO RKMSGO
+                   END-IF
+                   PERFORM CC000_DISPLAY_SCREEN
+
+               WHEN OTHER
+                   MOVE 'INVALID KEY' TO RKMSGO
+                   PERFORM CC000_DISPLAY_SCREEN
+           END-EVALUATE.
+
+       BB000_PROCESS_INPUT SECTION.
+
+           IF RKMAXUI NUMERIC
+               MOVE RKMAXUI TO PROMO-MAX-USES
+           ELSE
+               MOVE 0 TO PROMO-MAX-USES
+           END-IF
+
+           IF RKMAXDI NUMERIC
+               MOVE RKMAXDI TO PROMO-MAX-DISC
+           ELSE
+               MOVE 0 TO PROMO-MAX-DISC
+           END-IF
+
+           IF RKPOSTGI NUMERIC
+               MOVE RKPOSTGI TO WS-POSTAGE-NUM
+               MOVE WS-POSTAGE-NUM TO PROMO-POSTAGE-COST
+           ELSE
+               MOVE 99999 TO PROMO-POSTAGE-COST
+           END-IF
+
+           EXEC CICS ASSIGN USERID(WS-USERID)
+           END-EXEC
+
+           EXEC CICS ASKTIME ABSTIME(WS-ABSTIME)
+           END-EXEC
+
+           EXEC CICS FORMATTIME
+               ABSTIME(WS-ABSTIME)
+               YYYYDDD(WS-JULIAN-DATE)
+           END-EXEC
+
+           MOVE WS-USERID        TO PROMO-AMENDED-BY
+           MOVE WS-JULIAN-DATE   TO PROMO-AMENDED-DATE
+
+           EXEC CICS REWRITE FILE('PROMOCDE')
+               FROM(PROMOTION-CODE-RECORD)
+               RESP(WS-RESP)
+           END-EXEC
+           .
+
+       BB000_CLEAR_FIELDS SECTION.
+
+           MOVE SPACES TO
+               RKPCDI
+               RKSHDSCI
+               RKFDESCI
+               RKVFROMI
+               RKVTOI
+               RKNEWCI
+               RKPOSTGI
+               RKMSGO
+
+           MOVE ZEROES TO
+               RKMAXUI
+               RKMAXDI
+           .
+
+       CC000_DISPLAY_SCREEN SECTION.
+
+           EXEC CICS SEND MAP('RKDTL')
+               MAPSET('RKMAP')
+               FROM(RKDTLO)
+               ERASE
+               FREEKB
+               RESP(WS-RESP)
+           END-EXEC
+
+           EXEC CICS RETURN
+               TRANSID('RTRT')
+               COMMAREA(PROMO-CODE-COMMAREA)
+           END-EXEC.
