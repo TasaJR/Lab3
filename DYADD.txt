@@ -1,0 +1,290 @@
+       IDENTIFICATION DIVISION.                                                 
+       PROGRAM-ID. DYADD.                                                       
+       DATA DIVISION.                                                           
+       WORKING-STORAGE SECTION.                                                 
+                                                                                
+       COPY DFHAID.                                                             
+       COPY DFHBMSCA.                                                           
+                                                                                
+       COPY DYPROMO.                                                            
+       COPY DYMAPS.                                                             
+       COPY DYCOMM.                                                             
+       COPY DYPROGS.                                                            
+                                                                                
+       01  CICS-ERROR-HANDLING.                                                 
+           03  RESP-CODE               PIC 9(8)   COMP.                         
+       01  TRANSACTION-ID              PIC X(4)   VALUE 'DY02'.                 
+       01  USER-ID                     PIC X(8).                                
+       01  ABSTIME                     PIC S9(15) COMP-3.                       
+       01  GREGORIAN                   PIC 9(8).                                
+       01  GREG-DATE.                                                           
+           03  GREG-YYYY               PIC 9(4).                                
+           03  GREG-MM                 PIC 9(2).                                
+           03  GREG-DD                 PIC 9(2).                                
+       01  GREG-FORMAT.                                                         
+           03  FORMAT-DD               PIC X(2).                                
+           03  FILLER                  PIC X      VALUE '/'.                    
+           03  FORMAT-MM               PIC X(2).                                
+           03  FILLER                  PIC X      VALUE '/'.                    
+           03  FORMAT-YYYY             PIC X(4).                                
+       01  JULN-DATE                   PIC 9(7).                                
+       01  INT-DATE                    PIC 9(7).                                
+       01 WS-SCREEN-FIELDS.                                                     
+          03 WS-PROMO-CODE             PIC X(6).                                
+          03 WS-PROMO-SHORT-DESC       PIC X(20).                               
+          03 WS-PROMO-DESCRIPTION.                                              
+             05 WS-PROMO-DESC-1        PIC X(62).                               
+             05 WS-PROMO-DESC-2        PIC X(69).                               
+             05 WS-PROMO-DESC-3        PIC X(69).                               
+          03 WS-PROMO-VALID-FROM       PIC 9(7).                                
+          03 WS-PROMO-VALID-TO         PIC 9(7).                                
+          03 WS-PROMO-MAX-USES         PIC 99.                                  
+          03 WS-PROMO-MAX-DISC         PIC 999.                                 
+          03 WS-PROMO-POSTAGE          PIC 9(5).                                
+          03 WS-PROMO-DISC-TYPE        PIC X.                                   
+          03 WS-PROMO-APPLIED-TO       PIC X.                                   
+          03 WS-PROMO-THRESH-TYPE      PIC X.                                   
+          03 WS-THRESH-VAL-1           PIC X(3).                                
+          03 WS-THRESH-VAL-2           PIC X(3).                                
+          03 WS-THRESH-VAL-3           PIC X(3).                                
+          03 WS-DISC-VAL-1             PIC X(3).                                
+          03 WS-DISC-VAL-2             PIC X(3).                                
+          03 WS-DISC-VAL-3             PIC X(3).                                
+          03 WS-PROMO-NEW-CUST         PIC X.                                   
+                                                                                
+       LINKAGE SECTION.                                                         
+                                                                                
+       01  DFHCOMMAREA                 PIC X(336).                              
+                                                                                
+       PROCEDURE DIVISION USING DFHCOMMAREA.                                    
+                                                                                
+       MAIN-PROCESS SECTION.                                                    
+                                                                                
+           IF EIBCALEN > 0                                                      
+             MOVE DFHCOMMAREA          TO PROMOTIONCODE-COMMAREA                
+             MOVE SPACES               TO DYADDO                                
+             MOVE PROMO-OPT2           TO CODEIO                                
+             MOVE DFHBMPRF             TO CODEIA                                
+           END-IF                                                               
+                                                                                
+           EVALUATE TRUE                                                        
+                                                                                
+           WHEN EIBAID = DFHPF3                                                 
+           WHEN EIBCALEN = ZERO                                                 
+             SET PROMOTION-MENU        TO TRUE                                  
+             SET PROMO-ADD             TO TRUE                                  
+             EXEC CICS XCTL                                                     
+                  PROGRAM(NEXT-PROGRAM-NAME)                                    
+                  COMMAREA(PROMOTIONCODE-COMMAREA)                              
+             END-EXEC                                                           
+                                                                                
+           WHEN EIBAID = DFHENTER                                               
+           AND PROMO-ADD                                                        
+             MOVE LOW-VALUES           TO DYADDI                                
+             EXEC CICS RECEIVE                                                  
+                  MAP('DYADD')                                                  
+                  MAPSET('DYMAPS')                                              
+                  INTO(DYADDI)                                                  
+                  RESP(RESP-CODE)                                               
+             END-EXEC                                                           
+             PERFORM PROCESS-INPUT                                              
+                                                                                
+           END-EVALUATE                                                         
+                                                                                
+           PERFORM SEND-MAP.                                                    
+                                                                                
+       PROCESS-INPUT SECTION.                                                   
+                                                                                
+           SET PROMOTION-FILE          TO TRUE                                  
+           SET PROMO-ADD               TO TRUE                                  
+           MOVE CODEII                 TO WS-PROMO-CODE                         
+           MOVE SDESII                 TO WS-PROMO-SHORT-DESC                   
+           MOVE LDE1II                 TO WS-PROMO-DESC-1                       
+           MOVE LDE2II                 TO WS-PROMO-DESC-2                       
+           MOVE LDE3II                 TO WS-PROMO-DESC-3                       
+           MOVE VALFII                 TO GREG-FORMAT                           
+           PERFORM CONVERT-DATE                                                 
+           MOVE JULN-DATE              TO WS-PROMO-VALID-FROM                   
+           MOVE VALTII                 TO GREG-FORMAT                           
+           PERFORM CONVERT-DATE                                                 
+           MOVE JULN-DATE              TO WS-PROMO-VALID-TO                     
+           MOVE NEWCII                 TO WS-PROMO-NEW-CUST                     
+           MOVE MAXUII                 TO WS-PROMO-MAX-USES                     
+           MOVE MAXDII                 TO WS-PROMO-MAX-DISC                     
+           MOVE POSTII                 TO WS-PROMO-POSTAGE                      
+           MOVE DISTII                 TO WS-PROMO-DISC-TYPE                    
+           MOVE APPTII                 TO WS-PROMO-APPLIED-TO                   
+           MOVE THRTII                 TO WS-PROMO-THRESH-TYPE                  
+           MOVE THR1II                 TO WS-THRESH-VAL-1                       
+           MOVE DIS1II                 TO WS-DISC-VAL-1                         
+           MOVE THR2II                 TO WS-THRESH-VAL-2                       
+           MOVE DIS2II                 TO WS-DISC-VAL-2                         
+           MOVE THR3II                 TO WS-THRESH-VAL-3                       
+           MOVE DIS3II                 TO WS-DISC-VAL-3                         
+           IF WS-PROMO-CODE NOT = SPACES AND                                    
+             FUNCTION LENGTH(WS-PROMO-CODE) = 6                                 
+             MOVE WS-PROMO-CODE        TO PROMO-CODE                            
+           ELSE                                                                 
+             MOVE 'INVALID CODE'       TO ADDMSGI                               
+             PERFORM ERROR-RETURN                                               
+           END-IF                                                               
+                                                                                
+           MOVE WS-PROMO-SHORT-DESC    TO PROMO-SHORT-DESC                      
+           MOVE WS-PROMO-DESCRIPTION   TO PROMO-DESC                            
+                                                                                
+           IF WS-PROMO-VALID-FROM NUMERIC                                       
+             MOVE WS-PROMO-VALID-FROM  TO PROMO-VALID-FROM                      
+           ELSE                                                                 
+             MOVE 'INVALID FROM DATE'  TO ADDMSGI                               
+             PERFORM ERROR-RETURN                                               
+           END-IF                                                               
+                                                                                
+           IF WS-PROMO-VALID-TO NUMERIC                                         
+             MOVE WS-PROMO-VALID-TO    TO PROMO-VALID-TO                        
+           ELSE                                                                 
+             MOVE 'INVALID TO DATE'    TO ADDMSGI                               
+             PERFORM ERROR-RETURN                                               
+           END-IF                                                               
+                                                                                
+           MOVE WS-PROMO-NEW-CUST      TO PROMO-NEW-CUST                        
+                                                                                
+           IF WS-PROMO-MAX-USES NUMERIC                                         
+             MOVE WS-PROMO-MAX-USES    TO PROMO-MAX-USES                        
+           ELSE                                                                 
+             MOVE 'INVALID MAX USES'   TO ADDMSGI                               
+             PERFORM ERROR-RETURN                                               
+           END-IF                                                               
+                                                                                
+           IF WS-PROMO-MAX-DISC NUMERIC AND WS-PROMO-MAX-DISC > 0               
+             MOVE WS-PROMO-MAX-DISC    TO PROMO-MAX-DISC                        
+           ELSE                                                                 
+             MOVE 'INVALID MAX DISC'   TO ADDMSGI                               
+             PERFORM ERROR-RETURN                                               
+           END-IF                                                               
+                                                                                
+           IF WS-PROMO-POSTAGE NUMERIC                                          
+             COMPUTE PROMO-POSTAGE-COST = WS-PROMO-POSTAGE / 100                
+           ELSE                                                                 
+             MOVE 'INVALID POSTAGE'    TO ADDMSGI                               
+             PERFORM ERROR-RETURN                                               
+           END-IF                                                               
+                                                                                
+           MOVE WS-PROMO-DISC-TYPE     TO PROMO-DISC-TYPE                       
+           MOVE WS-PROMO-APPLIED-TO    TO PROMO-APPLIED-TO                      
+           MOVE WS-PROMO-THRESH-TYPE   TO PROMO-THRESHOLD-TYPE                  
+                                                                                
+           IF WS-THRESH-VAL-1 NUMERIC                                           
+             MOVE WS-THRESH-VAL-1      TO PROMO-THRESHOLD-VALUE (1)             
+           ELSE                                                                 
+             MOVE 'INVALID THRESHOLD'  TO ADDMSGI                               
+             PERFORM ERROR-RETURN                                               
+           END-IF                                                               
+                                                                                
+           IF WS-DISC-VAL-1 NUMERIC                                             
+             MOVE WS-DISC-VAL-1      TO PROMO-DISCOUNT-VALUE (1)                
+           ELSE                                                                 
+             MOVE 'INVALID DISCOUNT'   TO ADDMSGI                               
+             PERFORM ERROR-RETURN                                               
+           END-IF                                                               
+                                                                                
+           IF WS-THRESH-VAL-2 NUMERIC                                           
+             MOVE WS-THRESH-VAL-2      TO PROMO-THRESHOLD-VALUE (2)             
+           ELSE                                                                 
+             MOVE 'INVALID THRESHOLD'  TO ADDMSGI                               
+             PERFORM ERROR-RETURN                                               
+           END-IF                                                               
+                                                                                
+           IF WS-DISC-VAL-2 NUMERIC                                             
+             MOVE WS-DISC-VAL-2      TO PROMO-DISCOUNT-VALUE (2)                
+           ELSE                                                                 
+             MOVE 'INVALID DISCOUNT'   TO ADDMSGI                               
+             PERFORM ERROR-RETURN                                               
+           END-IF                                                               
+                                                                                
+           IF WS-THRESH-VAL-3 NUMERIC                                           
+             MOVE WS-THRESH-VAL-3      TO PROMO-THRESHOLD-VALUE (3)             
+           ELSE                                                                 
+             MOVE 'INVALID THRESHOLD'  TO ADDMSGI                               
+             PERFORM ERROR-RETURN                                               
+           END-IF                                                               
+                                                                                
+           IF WS-DISC-VAL-3 NUMERIC                                             
+             MOVE WS-DISC-VAL-3      TO PROMO-DISCOUNT-VALUE (3)                
+           ELSE                                                                 
+             MOVE 'INVALID DISCOUNT'   TO ADDMSGI                               
+             PERFORM ERROR-RETURN                                               
+           END-IF                                                               
+           EXEC CICS ASSIGN                                                     
+                USERID (USER-ID)                                                
+           END-EXEC                                                             
+           EXEC CICS ASKTIME                                                    
+                ABSTIME (ABSTIME)                                               
+           END-EXEC                                                             
+           EXEC CICS FORMATTIME                                                 
+                ABSTIME (ABSTIME)                                               
+                YYYYDDD (JULN-DATE)                                             
+           END-EXEC                                                             
+           MOVE USER-ID                TO PROMO-CREATED-BY                      
+           MOVE JULN-DATE              TO PROMO-CREATED-DATE                    
+           MOVE USER-ID                TO PROMO-AMENDED-BY                      
+           MOVE JULN-DATE              TO PROMO-AMENDED-DATE                    
+           MOVE PROMOTIONCODE-RECORD   TO PROMO-DETAILS                         
+           MOVE PROMOTIONCODE-COMMAREA TO DFHCOMMAREA                           
+           SET PROMO-FILE-WRITE        TO TRUE                                  
+           EXEC CICS LINK                                                       
+                PROGRAM(NEXT-PROGRAM-NAME)                                      
+                COMMAREA(PROMOTIONCODE-COMMAREA)                                
+           END-EXEC                                                             
+           SET PROMOTION-VIEW          TO TRUE                                  
+           EXEC CICS XCTL                                                       
+                PROGRAM(NEXT-PROGRAM-NAME)                                      
+                COMMAREA(PROMOTIONCODE-COMMAREA)                                
+           END-EXEC.                                                            
+                                                                                
+        PROCESS-INPUT-EXIT.                                                     
+           EXIT.                                                                
+                                                                                
+        SEND-MAP SECTION.                                                       
+                                                                                
+           EXEC CICS SEND                                                       
+                MAP('DYADD')                                                    
+                MAPSET('DYMAPS')                                                
+                ERASE                                                           
+                FREEKB                                                          
+                RESP(RESP-CODE)                                                 
+           END-EXEC                                                             
+           SET PROMO-ADD               TO TRUE                                  
+           EXEC CICS RETURN                                                     
+                TRANSID(TRANSACTION-ID)                                         
+                COMMAREA(PROMOTIONCODE-COMMAREA)                                
+           END-EXEC.                                                            
+                                                                                
+       SEND-MAP-EXIT.                                                           
+           EXIT.                                                                
+                                                                                
+       CONVERT-DATE SECTION.                                                    
+                                                                                
+           MOVE FORMAT-YYYY            TO GREG-YYYY                             
+           MOVE FORMAT-MM              TO GREG-MM                               
+           MOVE FORMAT-DD              TO GREG-DD                               
+           MOVE GREG-DATE              TO GREGORIAN                             
+           COMPUTE INT-DATE  = FUNCTION INTEGER-OF-DATE(GREGORIAN)              
+           COMPUTE JULN-DATE = FUNCTION DAY-OF-INTEGER(INT-DATE).               
+                                                                                
+       CONVERT-DATE-EXIT.                                                       
+           EXIT.                                                                
+                                                                                
+       ERROR-RETURN SECTION.                                                    
+           EXEC CICS SEND                                                       
+                MAP('DYADD')                                                    
+                MAPSET('DYMAPS')                                                
+                FREEKB                                                          
+                RESP(RESP-CODE)                                                 
+           END-EXEC                                                             
+           SET PROMO-ADD               TO TRUE                                  
+           EXEC CICS RETURN                                                     
+                TRANSID('DY02')                                                 
+                COMMAREA(PROMOTIONCODE-COMMAREA)                                
+           END-EXEC.                                                            
+       ERROR-RETURN-EXIT.                                                       
+           EXIT.                                                                

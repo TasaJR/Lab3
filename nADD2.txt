@@ -1,0 +1,188 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. RKADD.
+
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+
+       COPY DFHAID.
+       COPY DFHBMSCA.
+       COPY RKMAP.
+       COPY RTCOMM.
+       COPY RTPROGS.
+       COPY PROMOCDE.
+
+       01 WS-RESP              PIC S9(8) COMP.
+       01 WS-POSTAGE-NUM       PIC S9(5)V99 COMP-3.
+       01 WS-USERID            PIC X(8).
+       01 WS-ABSTIME           PIC S9(15) COMP-3.
+       01 WS-JULIAN-DATE       PIC 9(7).
+       01 FIRST-TIME-FLAG      PIC X VALUE 'Y'.
+          88 FIRST-TIME        VALUE 'Y'.
+          88 NOT-FIRST-TIME    VALUE 'N'.
+
+       LINKAGE SECTION.
+       01 DFHCOMMAREA          PIC X(100).
+
+       PROCEDURE DIVISION USING DFHCOMMAREA.
+
+       MAINLINE SECTION.
+
+           IF EIBCALEN = 0
+               INITIALIZE PROMO-CODE-COMMAREA
+               INITIALIZE RKDTLI
+               SET FIRST-TIME TO TRUE
+               PERFORM DISPLAY-SCREEN
+               GOBACK
+           END-IF
+
+           MOVE DFHCOMMAREA TO PROMO-CODE-COMMAREA
+
+           IF FIRST-TIME
+               MOVE PROMO-CODE-IN-COMMAREA TO RKPCDI
+               SET NOT-FIRST-TIME TO TRUE
+               PERFORM DISPLAY-SCREEN
+               GOBACK
+           END-IF
+
+           EXEC CICS RECEIVE
+               MAP('RKDTL')
+               MAPSET('RKMAP')
+               INTO(RKDTLI)
+               RESP(WS-RESP)
+           END-EXEC
+
+           MOVE RKPCDI TO PROMO-CODE
+           MOVE PROMO-CODE TO PROMO-CODE-IN-COMMAREA
+
+           EVALUATE TRUE
+               WHEN EIBAID = DFHPF3
+                   EXEC CICS XCTL
+                       PROGRAM('RKMENU')
+                       COMMAREA(PROMO-CODE-COMMAREA)
+                   END-EXEC
+
+               WHEN EIBAID = DFHENTER
+               WHEN EIBAID = DFHPF2
+                   PERFORM VALIDATE-FIELDS
+                   PERFORM CHECK-EXISTS
+                   IF RKMSGO = SPACES
+                       PERFORM WRITE-RECORD
+                   END-IF
+                   PERFORM DISPLAY-SCREEN
+                   GOBACK
+
+               WHEN OTHER
+                   MOVE 'INVALID KEY' TO RKMSGO
+                   PERFORM DISPLAY-SCREEN
+                   GOBACK
+           END-EVALUATE.
+
+       VALIDATE-FIELDS SECTION.
+
+           INITIALIZE PROMOTION-CODE-RECORD
+
+           MOVE RKPCDI    TO PROMO-CODE
+           MOVE RKSHDSCI  TO PROMO-SHORT-DESC
+           MOVE RKFDESCI  TO PROMO-DESC(1:50)
+           MOVE RKNEWCI   TO PROMO-NEW-CUST
+
+           IF RKMAXUI NUMERIC
+               MOVE RKMAXUI TO PROMO-MAX-USES
+           ELSE
+               MOVE 'INVALID MAX USES' TO RKMSGO
+               EXIT SECTION
+           END-IF
+
+           IF RKMAXDI NUMERIC
+               MOVE RKMAXDI TO PROMO-MAX-DISC
+           ELSE
+               MOVE 'INVALID MAX DISC' TO RKMSGO
+               EXIT SECTION
+           END-IF
+
+           IF RKPOSTGI NUMERIC
+               MOVE RKPOSTGI TO WS-POSTAGE-NUM
+               MOVE WS-POSTAGE-NUM TO PROMO-POSTAGE-COST
+           ELSE
+               MOVE 'INVALID POSTAGE' TO RKMSGO
+               EXIT SECTION
+           END-IF
+
+           IF RKVFROMI NOT = SPACES
+               IF RKVFROMI NOT NUMERIC
+                   MOVE 'INVALID FROM DATE' TO RKMSGO
+                   EXIT SECTION
+               END-IF
+               IF FUNCTION LENGTH(RKVFROMI) NOT = 7
+                   MOVE 'INVALID FROM DATE' TO RKMSGO
+                   EXIT SECTION
+               END-IF
+           END-IF
+
+           IF RKVTOI NOT = SPACES
+               IF RKVTOI NOT NUMERIC
+                   MOVE 'INVALID TO DATE' TO RKMSGO
+                   EXIT SECTION
+               END-IF
+               IF FUNCTION LENGTH(RKVTOI) NOT = 7
+                   MOVE 'INVALID TO DATE' TO RKMSGO
+                   EXIT SECTION
+               END-IF
+           END-IF
+
+           MOVE RKVFROMI TO PROMO-VALID-FROM
+           MOVE RKVTOI   TO PROMO-VALID-TO
+
+           EXEC CICS ASSIGN USERID(WS-USERID) END-EXEC
+           EXEC CICS ASKTIME ABSTIME(WS-ABSTIME) END-EXEC
+           EXEC CICS FORMATTIME
+               ABSTIME(WS-ABSTIME)
+               YYYYDDD(WS-JULIAN-DATE)
+           END-EXEC
+
+           MOVE WS-USERID        TO PROMO-CREATED-BY
+           MOVE WS-USERID        TO PROMO-AMENDED-BY
+           MOVE WS-JULIAN-DATE   TO PROMO-CREATED-DATE
+           MOVE WS-JULIAN-DATE   TO PROMO-AMENDED-DATE.
+
+       CHECK-EXISTS SECTION.
+
+           EXEC CICS READ FILE('PROMOCDE')
+               INTO(PROMOTION-CODE-RECORD)
+               RIDFLD(PROMO-CODE)
+               RESP(WS-RESP)
+           END-EXEC
+
+           IF WS-RESP = DFHRESP(NORMAL)
+               MOVE 'PROMO EXISTS' TO RKMSGO
+           ELSE
+               MOVE SPACES TO RKMSGO.
+
+       WRITE-RECORD SECTION.
+
+           EXEC CICS WRITE FILE('PROMOCDE')
+               FROM(PROMOTION-CODE-RECORD)
+               RIDFLD(PROMO-CODE)
+               RESP(WS-RESP)
+           END-EXEC
+
+           IF WS-RESP = DFHRESP(NORMAL)
+               MOVE 'PROMO ADDED OK' TO RKMSGO
+           ELSE
+               MOVE 'WRITE FAILED' TO RKMSGO.
+
+       DISPLAY-SCREEN SECTION.
+
+           MOVE PROMO-CODE-IN-COMMAREA TO RKPCDI
+
+           EXEC CICS SEND MAP('RKDTL')
+               MAPSET('RKMAP')
+               ERASE
+               FREEKB
+               RESP(WS-RESP)
+           END-EXEC
+
+           EXEC CICS RETURN
+               TRANSID('RTRT')
+               COMMAREA(PROMO-CODE-COMMAREA)
+           END-EXEC.
