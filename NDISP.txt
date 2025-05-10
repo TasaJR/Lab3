@@ -1,0 +1,142 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. RKDISP.
+
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+
+       COPY DFHAID.
+       COPY DFHBMSCA.
+       COPY RKMAP.
+       COPY RTCOMM.
+       COPY RTPROGS.
+       COPY PROMOCDE.
+
+       01 CICS-ERROR-HANDLING.
+           03 RESP-CODE               PIC 9(8) COMP.
+
+       01 DATE-CONVERSION.
+           05 INT-DATE                PIC 9(7).
+           05 GREG-DATE               PIC 9(8).
+           05 GREG-YEAR-SHORT-NUM     PIC 99.
+           05 GREG-YEAR-SHORT         PIC X(2).
+           05 GREG-MM                 PIC 9(2).
+           05 GREG-DD                 PIC 9(2).
+           05 DISPLAY-FROM            PIC X(10).
+           05 DISPLAY-TO              PIC X(10).
+
+       01 WS-POSTAGE-DISPLAY          PIC 999.99.
+       01 WS-POSTAGE-ALPHA            PIC X(6).
+
+       LINKAGE SECTION.
+       01 DFHCOMMAREA                 PIC X(100).
+
+       PROCEDURE DIVISION USING DFHCOMMAREA.
+
+       AA000_MAINLINE SECTION.
+
+           IF EIBCALEN > 0
+               MOVE DFHCOMMAREA TO PROMO-CODE-COMMAREA
+
+               EVALUATE EIBAID
+                   WHEN DFHPF2
+                       SET PROMO-CODE-MENU TO TRUE
+                       INITIALIZE RKDTLO
+                       EXEC CICS XCTL
+                           PROGRAM(RTMENU-PGM)
+                           COMMAREA(PROMO-CODE-COMMAREA)
+                       END-EXEC
+
+                   WHEN DFHPF3
+                       EXEC CICS RETURN
+                       END-EXEC
+
+                   WHEN OTHER
+                       INITIALIZE RKDTLO
+                       MOVE PROMO-CODE-IN-COMMAREA TO PROMO-CODE
+                       EXEC CICS READ FILE('PROMOCDE')
+                           INTO(PROMOTION-CODE-RECORD)
+                           RIDFLD(PROMO-CODE)
+                           RESP(RESP-CODE)
+                       END-EXEC
+
+                       IF RESP-CODE = DFHRESP(NORMAL)
+                           PERFORM BB000_POPULATE_SCREEN
+                       ELSE
+                           MOVE SPACES TO RKDTLO
+                           MOVE 'PROMO CODE NOT FOUND' TO RKMSGO
+                       END-IF
+               END-EVALUATE
+           END-IF
+
+           PERFORM CC000_SEND_MAP
+           .
+
+       BB000_POPULATE_SCREEN SECTION.
+
+           MOVE PROMO-CODE           TO RKPCDO
+           MOVE PROMO-SHORT-DESC     TO RKSHDSCO
+           MOVE PROMO-DESC(1:50)     TO RKFDESCO
+
+           *> Format VALID-FROM
+           MOVE PROMO-VALID-FROM     TO INT-DATE
+           COMPUTE GREG-DATE = 
+               FUNCTION DATE-OF-INTEGER(INT-DATE)
+           MOVE GREG-DATE(5:2)       TO GREG-MM
+           MOVE GREG-DATE(7:2)       TO GREG-DD
+           COMPUTE GREG-YEAR-SHORT-NUM = 
+               FUNCTION MOD(GREG-DATE / 10000, 100)
+           MOVE GREG-YEAR-SHORT-NUM  TO GREG-YEAR-SHORT
+           STRING GREG-DD '/' GREG-MM '/' GREG-YEAR-SHORT
+               DELIMITED BY SIZE INTO DISPLAY-FROM
+           MOVE DISPLAY-FROM         TO RKVFROMO
+
+           *> Format VALID-TO or NO EXPIRY
+           MOVE PROMO-VALID-TO       TO INT-DATE
+           IF PROMO-VALID-TO NOT = 0
+               COMPUTE GREG-DATE = 
+                   FUNCTION DATE-OF-INTEGER(INT-DATE)
+               MOVE GREG-DATE(5:2)   TO GREG-MM
+               MOVE GREG-DATE(7:2)   TO GREG-DD
+               COMPUTE GREG-YEAR-SHORT-NUM = 
+                   FUNCTION MOD(GREG-DATE / 10000, 100)
+               MOVE GREG-YEAR-SHORT-NUM 
+                   TO GREG-YEAR-SHORT
+               STRING GREG-DD '/' GREG-MM '/' 
+                   GREG-YEAR-SHORT
+                   DELIMITED BY SIZE INTO DISPLAY-TO
+               MOVE DISPLAY-TO       TO RKVTOO
+           ELSE
+               MOVE 'NO EXPIRY'      TO RKVTOO
+           END-IF
+
+           MOVE PROMO-NEW-CUST       TO RKNEWCO
+           MOVE PROMO-MAX-USES       TO RKMAXUO
+           MOVE PROMO-MAX-DISC       TO RKMAXDO
+
+           COMPUTE WS-POSTAGE-DISPLAY = 
+               PROMO-POSTAGE-COST / 100
+           MOVE WS-POSTAGE-DISPLAY   TO WS-POSTAGE-ALPHA
+           MOVE WS-POSTAGE-ALPHA     TO RKPOSTGO
+           .
+
+       CC000_SEND_MAP SECTION.
+
+           EXEC CICS SEND
+               MAP('RKDTL')
+               MAPSET('RKMAP')
+               FROM(RKDTLO)
+               ERASE
+               FREEKB
+               RESP(RESP-CODE)
+           END-EXEC
+
+           SET LAST-DISP TO TRUE
+
+           EXEC CICS RETURN
+               TRANSID('RTRT')
+               COMMAREA(PROMO-CODE-COMMAREA)
+           END-EXEC
+           .
+
+       DD000_SEND_MAP_EXIT.
+           EXIT.

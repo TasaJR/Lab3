@@ -1,0 +1,99 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. RKDELT.
+
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+
+       COPY DFHAID.
+       COPY DFHBMSCA.
+       COPY RKMAP.
+       COPY RTCOMM.
+       COPY RTPROGS.
+       COPY PROMOCDE.
+
+       01 WS-RESP              PIC S9(8) COMP.
+       01 PROMO-CODE-KEY       PIC X(10).
+
+       LINKAGE SECTION.
+       01 DFHCOMMAREA          PIC X(100).
+
+       PROCEDURE DIVISION USING DFHCOMMAREA.
+
+       AA000_MAINLINE SECTION.
+
+           IF EIBCALEN > 0
+               MOVE DFHCOMMAREA TO PROMO-CODE-COMMAREA
+
+               MOVE PROMO-CODE-IN-COMMAREA TO PROMO-CODE-KEY
+               MOVE PROMO-CODE-IN-COMMAREA TO RKPCDI
+
+               EVALUATE EIBAID
+                   WHEN DFHPF3
+                       EXEC CICS XCTL
+                           PROGRAM('RKMENU')
+                           COMMAREA(PROMO-CODE-COMMAREA)
+                       END-EXEC
+
+                   WHEN DFHPF2
+                       PERFORM BB000_DELETE_RECORD
+
+                   WHEN DFHENTER
+                       PERFORM BB000_DELETE_RECORD
+
+                   WHEN OTHER
+                       MOVE 'INVALID KEY' TO RKMSGO
+               END-EVALUATE
+           ELSE
+               MOVE SPACES TO RKMSGO
+               MOVE SPACES TO RKDTLI
+           END-IF
+
+           PERFORM CC000_DISPLAY_SCREEN
+           .
+
+       BB000_DELETE_RECORD SECTION.
+
+           MOVE RKPCDI TO PROMO-CODE-KEY
+
+           IF PROMO-CODE-KEY = SPACES
+               MOVE 'ENTER A PROMO CODE' TO RKMSGO
+               EXIT SECTION
+           END-IF
+
+           EXEC CICS READ FILE('PROMOCDE')
+               INTO(PROMOTION-CODE-RECORD)
+               RIDFLD(PROMO-CODE-KEY)
+               RESP(WS-RESP)
+           END-EXEC
+
+           IF WS-RESP = DFHRESP(NOTFND)
+               MOVE 'PROMO NOT FOUND' TO RKMSGO
+               EXIT SECTION
+           END-IF
+
+           EXEC CICS DELETE FILE('PROMOCDE')
+               RIDFLD(PROMO-CODE-KEY)
+               RESP(WS-RESP)
+           END-EXEC
+
+           IF WS-RESP = DFHRESP(NORMAL)
+               MOVE 'PROMO DELETED OK' TO RKMSGO
+           ELSE
+               MOVE 'DELETE FAILED' TO RKMSGO
+           END-IF
+           .
+
+       CC000_DISPLAY_SCREEN SECTION.
+
+           EXEC CICS SEND MAP('RKDTL')
+               MAPSET('RKMAP')
+               ERASE
+               FREEKB
+               RESP(WS-RESP)
+           END-EXEC
+
+           EXEC CICS RETURN
+               TRANSID('RTRT')
+               COMMAREA(PROMO-CODE-COMMAREA)
+           END-EXEC
+           .
